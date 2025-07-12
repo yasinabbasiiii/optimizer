@@ -1,3 +1,6 @@
+
+
+<code>bash <(curl -sSL https://github.com/yasinabbasiiii/optimizer/blob/main/xray-optimizer.sh)</code>
 ✅ 1. اجرای مستقیم با curl
 
 
