@@ -1,7 +1,10 @@
 ✅ 1. اجرای مستقیم با curl
 
-bash <(curl -sSL https://raw.githubusercontent.com/yasinabbasiiii/optimizer/main/xanmod-installer.sh)
 
+
+<code>bash <(curl -sSL https://raw.githubusercontent.com/yasinabbasiiii/optimizer/main/xanmod-installer.sh)</code>
 ✅ 2. اجرای مستقیم با wget
 
-bash <(wget -qO- https://raw.githubusercontent.com/yasinabbasiiii/optimizer/main/xanmod-installer.sh)
+
+
+<code>bash <(wget -qO- https://raw.githubusercontent.com/yasinabbasiiii/optimizer/main/xanmod-installer.sh)</code>
