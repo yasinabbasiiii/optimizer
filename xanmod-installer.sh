@@ -2,20 +2,20 @@
 
 set -e
 
-# رنگ‌ها
+# Colors
 green()  { echo -e "\033[1;32m$*\033[0m"; }
 yellow() { echo -e "\033[1;33m$*\033[0m"; }
 red()    { echo -e "\033[1;31m$*\033[0m"; }
 
-# بررسی root
+# Check for root
 if [[ $EUID -ne 0 ]]; then
-  red "[!] این اسکریپت باید با دسترسی root اجرا شود."
+  red "[!] This script must be run as root."
   exit 1
 fi
 
-# تعیین level CPU
+# CPU level detection based on feature flags
 detect_cpu_level() {
-  FLAGS=$(grep -oP '^flags\s+:\s+\K.+' /proc/cpuinfo | head -1)
+  FLAGS=$(grep -m1 -oP '^flags\s+:\s+\K.+' /proc/cpuinfo | tr '\n' ' ')
 
   level=0
   [[ $FLAGS =~ (lm.*cmov.*cx8.*fpu.*fxsr.*mmx.*syscall.*sse2) ]] && level=1
@@ -29,35 +29,30 @@ detect_cpu_level() {
 cpu_level=$(detect_cpu_level)
 
 if [[ $cpu_level -lt 1 ]]; then
-  red "[!] CPU شما برای XanMod پشتیبانی نمی‌شود."
+  red "[!] CPU not supported by XanMod kernel (no compatible instruction sets detected)."
   exit 1
 fi
 
-yellow "🔎 نسخه پیشنهادی XanMod برای این سیستم: linux-xanmod-x64v${cpu_level}"
-read -p "آیا مایل به نصب هستید؟ (y/n): " confirm
+yellow "🔎 Detected CPU level: v$cpu_level"
+yellow "💡 Recommended kernel: linux-xanmod-x64v$cpu_level"
+
+read -p "Do you want to install this kernel? (y/n): " confirm
 
 if [[ $confirm != "y" && $confirm != "Y" ]]; then
-  yellow "[!] عملیات نصب لغو شد."
+  yellow "[*] Installation cancelled."
   exit 0
 fi
 
-green "✅ شروع نصب XanMod x64v$cpu_level ..."
+green "✅ Installing XanMod Kernel x64v$cpu_level..."
 
-# افزودن key
+# Add GPG key
 tmp_key=/tmp/xanmod.gpg
 wget -qO $tmp_key https://dl.xanmod.org/archive.key || {
-  red "[!] دانلود GPG key از xanmod.org شکست خورد."
+  red "[!] Failed to download GPG key from xanmod.org"
   exit 1
 }
 gpg --dearmor -o /usr/share/keyrings/xanmod-archive-keyring.gpg $tmp_key
 rm -f $tmp_key
 
-# افزودن مخزن
-echo 'deb [signed-by=/usr/share/keyrings/xanmod-archive-keyring.gpg] http://deb.xanmod.org releases main' > /etc/apt/sources.list.d/xanmod-release.list
-
-# نصب
-apt update -q
-apt install -y "linux-xanmod-x64v$cpu_level"
-
-green "✅ XanMod Kernel x64v$cpu_level نصب شد."
-yellow "🔁 برای اعمال کرنل جدید، سیستم را reboot کنید."
+# Add repository
+echo 'deb [signed-by=/usr/share/keyrings/xanmod-archive-keyring.gpg] http
