@@ -1,10 +1,8 @@
-
 #!/bin/bash
 
-# === Ubuntu Optimizer for Xray High-Load Servers (Iran+Global Tunneling Setup) ===
-# Version: 1.0 - Built on 2025-07-12
+# === Ubuntu Optimizer for Xray High-Load Servers ===
+# Version: 1.1 - Updated 2025-07-12
 # Author: AI-generated, verified for production
-# Use case: Xray servers handling 10K+ TCP connections via Tinc tunnel between Iran & global nodes.
 
 set -e
 
@@ -14,7 +12,7 @@ yellow() { echo -e "\033[1;33m$*\033[0m"; }
 red()    { echo -e "\033[1;31m$*\033[0m"; }
 
 # === Check root ===
-if [[ $EUID -ne 0 ]]; then
+if [ "$(id -u)" -ne 0 ]; then
   red "[!] This script must be run as root."
   exit 1
 fi
@@ -83,25 +81,28 @@ detect_cpu_level() {
   echo "$level"
 }
 
-cpu_level=$(detect_cpu_level)
-if [[ $cpu_level -lt 1 ]]; then
-  red "[!] CPU does not support any XanMod optimized kernel variant."
+current_kernel=$(uname -r)
+if echo "$current_kernel" | grep -q "xanmod"; then
+  green "[✓] XanMod is already installed: $current_kernel"
 else
-  yellow "🔎 CPU Level Detected: x64v$cpu_level"
-  read -p "Do you want to install XanMod kernel x64v$cpu_level now? (y/n): " confirm
-  if [[ "$confirm" == "y" || "$confirm" == "Y" ]]; then
-    tmp_key=/tmp/xanmod.gpg
-    wget -qO $tmp_key https://dl.xanmod.org/archive.key
-    gpg --dearmor -o /usr/share/keyrings/xanmod-archive-keyring.gpg $tmp_key
-    echo 'deb [signed-by=/usr/share/keyrings/xanmod-archive-keyring.gpg] http://deb.xanmod.org releases main' > /etc/apt/sources.list.d/xanmod-release.list
-    apt update -q
-    apt install -y "linux-xanmod-x64v$cpu_level"
-    green "[+] XanMod x64v$cpu_level installed. Please reboot to activate it."
+  cpu_level=$(detect_cpu_level)
+  if [ "$cpu_level" -lt 1 ]; then
+    red "[!] CPU does not support any XanMod optimized kernel variant."
   else
-    yellow "[*] XanMod installation skipped."
+    yellow "[🔎] CPU Level Detected: x64v$cpu_level"
+    read -p "Do you want to install XanMod kernel x64v$cpu_level now? (y/n): " confirm
+    if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+      tmp_key=/tmp/xanmod.gpg
+      wget -qO $tmp_key https://dl.xanmod.org/archive.key
+      gpg --dearmor -o /usr/share/keyrings/xanmod-archive-keyring.gpg $tmp_key
+      echo 'deb [signed-by=/usr/share/keyrings/xanmod-archive-keyring.gpg] http://deb.xanmod.org releases main' > /etc/apt/sources.list.d/xanmod-release.list
+      apt update -q
+      apt install -y "linux-xanmod-x64v$cpu_level"
+      green "[+] XanMod x64v$cpu_level installed. Please reboot to activate it."
+    else
+      yellow "[*] XanMod installation skipped."
+    fi
   fi
 fi
 
-# === Final Message ===
 green "[✅] Optimization complete. Please reboot your server to apply all changes."
-
