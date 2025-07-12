@@ -1,76 +1,20 @@
-#!/bin/bash
 
-# === Ubuntu Optimizer for Xray High-Load Servers ===
-# Version: 1.1 - Updated 2025-07-12
-# Author: AI-generated, verified for production
+#!/bin/bash
 
 set -e
 
-# === Color Helpers ===
 green()  { echo -e "\033[1;32m$*\033[0m"; }
 yellow() { echo -e "\033[1;33m$*\033[0m"; }
 red()    { echo -e "\033[1;31m$*\033[0m"; }
 
-# === Check root ===
 if [ "$(id -u)" -ne 0 ]; then
-  red "[!] This script must be run as root."
+  red "[!] Run this script as root."
   exit 1
 fi
 
-# === Backup sysctl ===
-backup_file="/etc/sysctl.conf.bak.$(date +%s)"
-cp /etc/sysctl.conf "$backup_file"
-yellow "[*] Backed up /etc/sysctl.conf to $backup_file"
-
-# === Apply Optimized sysctl Settings ===
-cat > /etc/sysctl.conf <<EOF
-# Optimized sysctl for high-concurrency Xray servers (Iran + Global)
-fs.file-max = 1000000
-net.core.netdev_max_backlog = 16384
-net.core.rmem_max = 67108864
-net.core.wmem_max = 67108864
-net.core.somaxconn = 65535
-net.ipv4.tcp_rmem = 4096 87380 67108864
-net.ipv4.tcp_wmem = 4096 65536 67108864
-net.ipv4.tcp_congestion_control = bbr
-net.core.default_qdisc = fq
-net.ipv4.tcp_syncookies = 1
-net.ipv4.tcp_fin_timeout = 15
-net.ipv4.tcp_keepalive_time = 600
-net.ipv4.ip_local_port_range = 1024 65535
-net.ipv4.tcp_tw_reuse = 1
-EOF
-
-sysctl -p
-green "[+] sysctl settings applied successfully."
-
-# === Set high ulimit ===
-ulimit_file="/etc/security/limits.conf"
-if ! grep -q 'root.*nofile' $ulimit_file; then
-  cat >> $ulimit_file <<EOF
-
-# Allow high file descriptors for Xray
-* soft nofile 1048576
-* hard nofile 1048576
-root soft nofile 1048576
-root hard nofile 1048576
-EOF
-  green "[+] ulimit (nofile) increased to 1048576"
-else
-  yellow "[*] ulimit settings already exist in limits.conf"
-fi
-
-# === Persist PAM limits ===
-pam_file="/etc/pam.d/common-session"
-if ! grep -q pam_limits.so $pam_file; then
-  echo "session required pam_limits.so" >> $pam_file
-  green "[+] PAM limits enabled in $pam_file"
-fi
-
-# === Detect and confirm CPU level for XanMod ===
+# CPU Level Detection
 detect_cpu_level() {
   FLAGS=$(grep -m1 -oP '^flags\s+:\s+\K.+' /proc/cpuinfo | tr ' ' '\n')
-
   has_flag() { echo "$FLAGS" | grep -q "^$1$"; }
 
   level=0
@@ -81,28 +25,57 @@ detect_cpu_level() {
   echo "$level"
 }
 
+cpu_level=$(detect_cpu_level)
+yellow "[🔍] Detected CPU Level: x64v$cpu_level"
+
+# Check installed kernel
 current_kernel=$(uname -r)
 if echo "$current_kernel" | grep -q "xanmod"; then
   green "[✓] XanMod is already installed: $current_kernel"
-else
-  cpu_level=$(detect_cpu_level)
-  if [ "$cpu_level" -lt 1 ]; then
-    red "[!] CPU does not support any XanMod optimized kernel variant."
+  exit 0
+fi
+
+# Make sure apt-cache is ready
+apt update -q
+
+# Detect available XanMod versions
+available_versions=$(apt-cache search linux-xanmod | awk '{print $1}' | grep '^linux-xanmod-x64v' | sort -V)
+
+# Try to find the highest available version <= cpu_level
+chosen_pkg=""
+for (( i=cpu_level; i>=1; i-- )); do
+  pkg="linux-xanmod-x64v$i"
+  if echo "$available_versions" | grep -q "$pkg"; then
+    chosen_pkg="$pkg"
+    break
+  fi
+done
+
+# Fallback to general kernel if nothing matched
+if [ -z "$chosen_pkg" ]; then
+  if apt-cache show linux-xanmod >/dev/null 2>&1; then
+    chosen_pkg="linux-xanmod"
+    yellow "[!] No specific x64vX found. Falling back to generic: $chosen_pkg"
   else
-    yellow "[🔎] CPU Level Detected: x64v$cpu_level"
-    read -p "Do you want to install XanMod kernel x64v$cpu_level now? (y/n): " confirm
-    if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-      tmp_key=/tmp/xanmod.gpg
-      wget -qO $tmp_key https://dl.xanmod.org/archive.key
-      gpg --dearmor -o /usr/share/keyrings/xanmod-archive-keyring.gpg $tmp_key
-      echo 'deb [signed-by=/usr/share/keyrings/xanmod-archive-keyring.gpg] http://deb.xanmod.org releases main' > /etc/apt/sources.list.d/xanmod-release.list
-      apt update -q
-      apt install -y "linux-xanmod-x64v$cpu_level"
-      green "[+] XanMod x64v$cpu_level installed. Please reboot to activate it."
-    else
-      yellow "[*] XanMod installation skipped."
-    fi
+    red "[✘] No suitable XanMod package found. Exiting."
+    exit 1
   fi
 fi
 
-green "[✅] Optimization complete. Please reboot your server to apply all changes."
+# Confirm with user
+read -p "Install $chosen_pkg now? (y/n): " confirm
+if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+  yellow "[*] Installation cancelled."
+  exit 0
+fi
+
+# Add XanMod repo if needed
+if [ ! -f /usr/share/keyrings/xanmod-archive-keyring.gpg ]; then
+  wget -qO- https://dl.xanmod.org/archive.key | gpg --dearmor -o /usr/share/keyrings/xanmod-archive-keyring.gpg
+fi
+echo 'deb [signed-by=/usr/share/keyrings/xanmod-archive-keyring.gpg] http://deb.xanmod.org releases main' > /etc/apt/sources.list.d/xanmod-release.list
+
+# Install
+apt update -q
+apt install -y "$chosen_pkg"
+green "[✓] $chosen_pkg installed. Please reboot to activate the new kernel."
