@@ -7,29 +7,41 @@ green()  { echo -e "\033[1;32m$*\033[0m"; }
 yellow() { echo -e "\033[1;33m$*\033[0m"; }
 red()    { echo -e "\033[1;31m$*\033[0m"; }
 
-# Check for root
+# Must be root
 if [[ $EUID -ne 0 ]]; then
   red "[!] This script must be run as root."
   exit 1
 fi
 
-# CPU level detection based on feature flags
-detect_cpu_level() {
-  FLAGS=$(grep -m1 -oP '^flags\s+:\s+\K.+' /proc/cpuinfo | tr '\n' ' ')
+# Extract flags
+FLAGS=$(grep -m1 -oP '^flags\s+:\s+\K.+' /proc/cpuinfo | tr ' ' '\n')
 
-  level=0
-  [[ $FLAGS =~ (lm.*cmov.*cx8.*fpu.*fxsr.*mmx.*syscall.*sse2) ]] && level=1
-  [[ $FLAGS =~ (cx16.*lahf_lm.*popcnt.*sse4_1.*sse4_2.*ssse3) ]] && level=2
-  [[ $FLAGS =~ (avx.*avx2.*bmi1.*bmi2.*fma.*abm.*movbe.*xsave) ]] && level=3
-  [[ $FLAGS =~ (avx512f.*avx512bw.*avx512cd.*avx512dq.*avx512vl) ]] && level=4
-
-  echo "$level"
+has_flag() {
+  echo "$FLAGS" | grep -q "^$1$"
 }
 
-cpu_level=$(detect_cpu_level)
+# Default: not supported
+cpu_level=0
+
+# Check levels from low to high
+if has_flag sse2; then
+  cpu_level=1
+fi
+
+if has_flag ssse3 && has_flag sse4_1 && has_flag sse4_2 && has_flag popcnt && has_flag cx16 && has_flag lahf_lm; then
+  cpu_level=2
+fi
+
+if has_flag avx && has_flag avx2 && has_flag bmi1 && has_flag bmi2 && has_flag fma && has_flag abm && has_flag movbe; then
+  cpu_level=3
+fi
+
+if has_flag avx512f && has_flag avx512bw && has_flag avx512cd && has_flag avx512dq && has_flag avx512vl; then
+  cpu_level=4
+fi
 
 if [[ $cpu_level -lt 1 ]]; then
-  red "[!] CPU not supported by XanMod kernel (no compatible instruction sets detected)."
+  red "[!] CPU not supported by XanMod kernel (insufficient flags)."
   exit 1
 fi
 
@@ -55,4 +67,11 @@ gpg --dearmor -o /usr/share/keyrings/xanmod-archive-keyring.gpg $tmp_key
 rm -f $tmp_key
 
 # Add repository
-echo 'deb [signed-by=/usr/share/keyrings/xanmod-archive-keyring.gpg] http
+echo 'deb [signed-by=/usr/share/keyrings/xanmod-archive-keyring.gpg] http://deb.xanmod.org releases main' > /etc/apt/sources.list.d/xanmod-release.list
+
+# Install kernel
+apt update -q
+apt install -y "linux-xanmod-x64v$cpu_level"
+
+green "✅ XanMod Kernel x64v$cpu_level installed successfully."
+yellow "🔁 Please reboot your system to activate the new kernel."
